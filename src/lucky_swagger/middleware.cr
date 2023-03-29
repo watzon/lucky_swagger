@@ -69,8 +69,14 @@ module LuckySwagger
         builder.add(Swagger::Controller.new(scope, "", actions))
       end
 
-      host = Lucky::ServerSettings.host
-      port = Lucky::ServerSettings.port
+      if ENV["LUCKY_ENV"]? == "production"
+        uri = URI.parse(ENV["APP_DOMAIN"])
+        host = uri.host
+        port = uri.port
+      else
+        host = Lucky::ServerSettings.host
+        port = Lucky::ServerSettings.port
+      end
 
       @api_handler = Swagger::HTTP::APIHandler.new(builder.built, File.join("#{host}:#{port}", settings.uri))
       @web_handler = Swagger::HTTP::WebHandler.new(settings.uri, api_handler.api_url)
