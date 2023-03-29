@@ -1,8 +1,9 @@
 name: lucky_swagger
-version: 0.1.0
+version: 0.2.0
 
 authors:
   - Valentine Kiselev <mrexox@yahoo.com>
+  - Chris Watson <chris@watzon.tech>
 
 description: |
   Swagger api applet for Lucky Framework
