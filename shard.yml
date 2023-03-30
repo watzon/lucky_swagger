@@ -10,14 +10,19 @@ description: |
 
 license: MIT
 
+crystalline:
+  main: src/lucky_swagger.cr
+
 dependencies:
   swagger:
     github: icyleaf/swagger
+    revision: c94b4cd
 
   habitat:
     github: luckyframework/habitat
+    version: ~> 0.4.7
 
 development_dependencies:
-  ameba:
-    github: crystal-ameba/ameba
-    version: ~> 0.11.0
+  lucky:
+    github: luckyframework/lucky
+    version: ~> 1.0.0

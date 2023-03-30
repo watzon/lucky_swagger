@@ -1,14 +1,54 @@
 version: 2.0
 shards:
-  ameba:
-    git: https://github.com/crystal-ameba/ameba.git
-    version: 0.11.0
+  backtracer:
+    git: https://github.com/sija/backtracer.cr.git
+    version: 1.2.2
+
+  cry:
+    git: https://github.com/luckyframework/cry.git
+    version: 0.4.3
+
+  dexter:
+    git: https://github.com/luckyframework/dexter.git
+    version: 0.3.4
+
+  exception_page:
+    git: https://github.com/crystal-loot/exception_page.git
+    version: 0.3.0
 
   habitat:
     git: https://github.com/luckyframework/habitat.git
-    version: 0.4.3
+    version: 0.4.7
+
+  lucky:
+    git: https://github.com/luckyframework/lucky.git
+    version: 1.0.0
+
+  lucky_router:
+    git: https://github.com/luckyframework/lucky_router.git
+    version: 0.5.2
+
+  lucky_task:
+    git: https://github.com/luckyframework/lucky_task.git
+    version: 0.1.1
+
+  pulsar:
+    git: https://github.com/luckyframework/pulsar.git
+    version: 0.2.3
+
+  shell-table:
+    git: https://github.com/luckyframework/shell-table.cr.git
+    version: 0.9.3
 
   swagger:
     git: https://github.com/icyleaf/swagger.git
     version: 0.1.1
+
+  teeplate:
+    git: https://github.com/luckyframework/teeplate.git
+    version: 0.8.5
+
+  wordsmith:
+    git: https://github.com/luckyframework/wordsmith.git
+    version: 0.4.0
 

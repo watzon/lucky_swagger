@@ -2,92 +2,74 @@ require "swagger"
 require "swagger/http/handler"
 
 module LuckySwagger
-  annotation Action; end
-
   class Middleware
-    getter api_handler, web_handler
+    getter api_handler : Swagger::HTTP::APIHandler
+    getter web_handler : Swagger::HTTP::WebHandler
 
     def initialize
       settings = LuckySwagger.settings
       builder = Swagger::Builder.new(
-        title: settings.app_name,
+        title: settings.title,
         version: settings.version,
         description: settings.description,
         terms_url: settings.terms_url,
-        authorizations: [
-          Swagger::Authorization.jwt(description: "Use JWT Auth"),
-        ]
+        license: settings.license,
+        contact: settings.contact,
+        authorizations: settings.authorizations,
       )
 
-      annotated_actions = {% begin %}
-        {
-          {% for action in Lucky::Action.all_subclasses %}
-            {% if (ann = action.annotation(LuckySwagger::Action)) && !action.abstract? %}
-              {{ action }} => {
-                scopes: {{ ann[:scopes] }},
-                summary: {{ ann[:summary] }},
-                responses: {{ ann[:responses] }},
-                request: {{ ann[:request] }},
-              },
-            {% end %}
-          {% end %}
-        }
-      {% end %}
+      # Build a list of controllers using the namespace_actions,
+      # and add them to the builder.
+      controllers = build_controllers
+      controllers.each do |(namespace, actions)|
+        builder.add(Swagger::Controller.new(namespace, "", actions))
+      end
 
-      # Add routes
-      controllers = Hash(String, Array(Swagger::Action)).new
-      Lucky.router.routes.each do |(method, path, action)|
-        next unless path.starts_with?(settings.uri)
-        annotated_action = annotated_actions[action]?
+      # Assign the handlers
+      @api_handler = Swagger::HTTP::APIHandler.new(builder.built, File.join("#{settings.host}:#{settings.port}", settings.path))
+      @web_handler = Swagger::HTTP::WebHandler.new(settings.path, api_handler.api_url)
+    end
 
-        scopes = annotated_action.try(&.[:scopes]) || action.to_s.split("::")
-        scope = scopes.first
-        description = annotated_action.try(&.[:summary]) || scopes[1..].join(" ")
-
-        query_params = action.query_param_declarations.map do |param|
-          crystal_def_to_swagger_param(param)
+    # Build the swagger controllers from the namespace_actions.
+    def build_controllers
+      {% begin %}
+        controllers = {} of String => Array(Swagger::Action)
+        all_actions = Lucky.router.routes.reduce({} of Lucky::Action.class => NamedTuple(method: Symbol, path: String)) do |hash, (method, path, action)|
+          hash[action] = {method: method, path: path}
+          hash
         end
 
-        path_params, path = lucky_route_to_swagger_params(path)
+        # Build actions based on which lucky actions have a `LuckySwagger::Action` annotation.
+        # Other actions are ignored, even if they're in the correct namespace.
+        {% for action in Lucky::Action.all_subclasses.reject(&.abstract?) %}
+          {% if ann = action.annotation(LuckySwagger::Action) %}
+            %namespace = {{ ann[:controller] }} || {{ action.id }}.name.split("::")[-2]
+            %method = all_actions[{{ action.id }}][:method].to_s.upcase
+            %path_params, %path = lucky_route_to_swagger_params(all_actions[{{ action.id }}][:path])
+            %query_params = {{ action.id }}.query_param_declarations.map do |param|
+              crystal_def_to_swagger_param(param)
+            end
 
-        controllers[scope] ||= [] of Swagger::Action
-        controllers[scope].unshift(
-          Swagger::Action.new(
-            method: method.to_s,
-            route: path,
-            description: description,
-            parameters: path_params + query_params,
-            request: annotated_action.try(&.[:request]),
-            responses: annotated_action.try(&.[:responses]) || [
-              Swagger::Response.new("200", "Success response"),
-            ],
-          )
-        )
-      end
+            controllers[%namespace] ||= [] of Swagger::Action
+            controllers[%namespace] << Swagger::Action.new(
+              method: %method,
+              route: %path,
+              summary: {{ ann[:summary] }},
+              description: {{ ann[:description] }},
+              parameters: %path_params + %query_params,
+              request: {{ ann[:request] }},
+              responses: {{ ann[:responses] }},
+              authorization: {{ ann[:authorization] }} || false,
+              deprecated: {{ ann[:deprecated] }} || false,
+            )
+          {% end %}
+        {% end %}
 
-      controllers.each do |scope, actions|
-        builder.add(Swagger::Controller.new(scope, "", actions))
-      end
-
-      if ENV["LUCKY_ENV"]? == "production"
-        uri = URI.parse(ENV["APP_DOMAIN"])
-        host = uri.host
-        port = uri.port
-      else
-        host = Lucky::ServerSettings.host
-        port = Lucky::ServerSettings.port
-      end
-
-      @api_handler = Swagger::HTTP::APIHandler.new(builder.built, File.join("#{host}:#{port}", settings.uri))
-      @web_handler = Swagger::HTTP::WebHandler.new(settings.uri, api_handler.api_url)
+        controllers
+      {% end %}
     end
 
     # Convert a crystal type definition into a swagger parameter.
-    # Examples:
-    #   crystal_def_to_swagger_param("id : Int32") # => Swagger::Parameter.new("id", "path", "int32")
-    #   crystal_def_to_swagger_param("id : Int32 | ::Nil") # => Swagger::Parameter.new("id", "path", "int32", required: false)
-    #   crystal_def_to_swagger_param("id : Int32 | ::Nil = 1") # => Swagger::Parameter.new("id", "path", "int32", required: false, default_value: 1)
-    #   crystal_def_to_swagger_param("id : Int32 | String") # => Swagger::Parameter.new("id", "path", "int32 | string")
     private def crystal_def_to_swagger_param(crystal_def)
       name, type = crystal_def.split(" : ")
       type = type.split(" | ").map do |t|
@@ -108,13 +90,6 @@ module LuckySwagger
 
     # Convert a Lucky route definition into a list of swagger parameters. Returns the list, and the
     # path in swagger format.
-    #
-    # Examples:
-    #   lucky_route_to_swagger_params("/users/:id") # => [Swagger::Parameter.new("id", "path", "string")], "/users/{id}"
-    #   lucky_route_to_swagger_params("/users/:id/comments/:comment_id") # => [Swagger::Parameter.new("id", "path", "string"), Swagger::Parameter.new("comment_id", "path", "string")], "/users/{id}/comments/{comment_id}"
-    #   lucky_route_to_swagger_params("/users/?:id") # => [Swagger::Parameter.new("id", "path", "string", required: false)], "/users/{id}"
-    #   lucky_route_to_swagger_params("/posts/*") # => [Swagger::Parameter.new("glob", "path", "string")], "/posts/{glob}"
-    #   lucky_route_to_swagger_params("/posts/*date") # => [Swagger::Parameter.new("date", "path", "string")], "/posts/{date}"
     def lucky_route_to_swagger_params(route)
       params = [] of Swagger::Parameter
       path = route.gsub(/:(\w+)/) do |match|
